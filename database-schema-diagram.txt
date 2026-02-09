@@ -1,0 +1,135 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    CANDIDATE MANAGEMENT API                                  ║
+║                      DATABASE SCHEMA DIAGRAM                                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              USERS Collection                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ _id: ObjectId                    (Primary Key)                      │   │
+│  │ name: String                     (Required)                         │   │
+│  │ email: String                    (Required, Unique, Indexed)        │   │
+│  │ password: String                 (Required, Hashed, Hidden)         │   │
+│  │ role: Enum                       (Required)                         │   │
+│  │    ├─ 'Candidate'                (Default)                          │   │
+│  │    └─ 'Recruiter'                                                     │   │
+│  │ createdAt: Date                  (Auto)                            │   │
+│  │ updatedAt: Date                  (Auto)                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+│  Relationships:                                                              │
+│    • One User can create many Candidates (appliedBy)                         │
+│    • One User (Recruiter) can move many Candidates (movedBy)                │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ References
+                                    │ (appliedBy, movedBy)
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            CANDIDATES Collection                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ _id: ObjectId                    (Primary Key)                      │   │
+│  │ name: String                     (Required)                         │   │
+│  │ email: String                    (Required, Unique, Indexed)        │   │
+│  │ role: String                     (Required) - Job Role              │   │
+│  │ resumeText: String               (Required)                         │   │
+│  │ stage: Enum                      (Required, Default: 'APPLIED')     │   │
+│  │    ├─ 'APPLIED'                  (Initial Stage)                   │   │
+│  │    ├─ 'SCREENING'                                                     │   │
+│  │    ├─ 'INTERVIEW'                                                     │   │
+│  │    ├─ 'HIRED'                      (Terminal)                        │   │
+│  │    └─ 'REJECTED'                   (Terminal)                       │   │
+│  │                                                                       │   │
+│  │ appliedBy: ObjectId              (Required, Ref: User)               │   │
+│  │ movedBy: ObjectId                (Optional, Ref: User)               │   │
+│  │                                                                       │   │
+│  │ stageHistory: Array [                                                 │   │
+│  │   {                                                                   │   │
+│  │     stage: String                (Enum)                              │   │
+│  │     movedBy: ObjectId            (Ref: User)                         │   │
+│  │     movedAt: Date                (Auto)                             │   │
+│  │     notes: String                (Optional)                          │   │
+│  │   }                                                                   │   │
+│  │ ]                                                                     │   │
+│  │                                                                       │   │
+│  │ createdAt: Date                  (Auto)                             │   │
+│  │ updatedAt: Date                  (Auto)                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+│  Relationships:                                                              │
+│    • Each Candidate belongs to one User (appliedBy)                          │
+│    • Each Candidate can be moved by one User at a time (movedBy)             │
+│    • Each Candidate tracks all stage changes (stageHistory)                  │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          PIPELINE FLOW DIAGRAM                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+                    ┌──────────┐
+                    │ APPLIED  │  ← Initial Stage (All candidates start here)
+                    └────┬─────┘
+                         │
+                         ▼
+                    ┌──────────┐
+                    │SCREENING  │
+                    └────┬─────┘
+                         │
+                         ▼
+                    ┌──────────┐
+                    │INTERVIEW  │
+                    └────┬─────┘
+                         │
+            ┌────────────┴────────────┐
+            │                         │
+            ▼                         ▼
+      ┌──────────┐            ┌──────────┐
+      │  HIRED   │            │ REJECTED │  ← Terminal Stages
+      └──────────┘            └──────────┘
+      (Can be reached         (Can be reached
+       from any stage)         from any stage)
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          ROLE-BASED ACCESS CONTROL                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            CANDIDATE Role                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│   View own application status                                              │
+│   Create own application                                                   │
+│   Update own application (name, role, resumeText only)                      │
+│   Cannot view other candidates                                             │
+│   Cannot change stage                                                      │
+│   Cannot delete candidates                                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            RECRUITER Role                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│   View all candidates                                                      │
+│   Create candidates                                                        │
+│   Update any candidate                                                     │
+│   Move candidates through stages                                           │
+│                                                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          INDEXES & PERFORMANCE                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+USERS Collection:
+  • email: UNIQUE INDEX (for fast login lookups)
+
+CANDIDATES Collection:
+  • email: UNIQUE INDEX (for duplicate prevention)
+  • appliedBy: INDEX (for filtering by creator)
+  • stage: INDEX (for filtering by stage)
+  • createdAt: INDEX (for sorting by date)
